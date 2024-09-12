@@ -1,0 +1,266 @@
+---
+title: "stats506hw1"
+format: html
+author: Leon Lin
+---
+
+[GitHub Repository](https://github.com/the-rizzard-of-0z/stats506.git) 
+
+```{r}
+setwd("/Users/leonlin/Documents/stats506local/stats506")
+```
+
+Problem 1
+a. 
+```{r}
+# import data
+wine_data <- read.table("data/wine/wine.data", sep = ",", header = FALSE)
+attributes <- c(
+  "Alcohol",
+  "Malic acid",
+  "Ash",
+  "Alcalinity of ash",
+  "Magnesium",
+  "Total phenols",
+  "Flavanoids",
+  "Nonflavanoid phenols",
+  "Proanthocyanins",
+  "Color intensity",
+  "Hue",
+  "OD280/OD315 of diluted wines",
+  "Proline"
+)
+colnames(wine_data) <- c("Class", attributes)
+```
+b.
+```{r}
+num_class1 <- sum(wine_data$Class == 1)
+num_class2 <- sum(wine_data$Class == 2)
+num_class3 <- sum(wine_data$Class == 3)
+print(paste("The number of wines in Class 1, 2, and 3 are", num_class1, ",", num_class2, ",", num_class3, "respectively, consistent as reported by wine.names."))
+```
+c. 
+```{r}
+#1
+# overall correlation
+cor <- cor(wine_data$Alcohol, wine_data$`Color intensity`)
+print(paste("The correlation between alcohol content and color intensity:", cor))
+
+#2
+# correlation by class
+cor_by_class <- tapply(1:nrow(wine_data), wine_data$Class, function(i) {
+  cor(wine_data$Alcohol[i], wine_data$`Color intensity`[i])
+})
+for (i in 1:3) {
+  print(paste("Correlation for class", i, ":", cor_by_class[i]))  
+}
+print("Hence, class 1 has the highest correlation between alcohol content and color intensity, and class 2 has the lowest.")
+
+#3
+max_color_intensity <- max(wine_data$`Color intensity`)
+# find index of obsv
+wine_highest_color_intensity <- wine_data[wine_data$`Color intensity` == max_color_intensity, ]
+alcohol_content <- wine_highest_color_intensity$Alcohol
+print(paste0("The wine with the heighest color intensity has an alcohol content of ", alcohol_content, "% ABV."))
+
+#4
+perc_higher_proanthocyanins <- sum(wine_data$Proanthocyanins > wine_data$Ash) / nrow(wine_data)
+print(paste0(round(perc_higher_proanthocyanins * 100, 4), "% of wines had a higher content of proanthocyanins compared to ash assuming the same units."))
+```
+d. 
+```{r}
+overall_avgs <- colMeans(wine_data[, -1])  # exclude class
+# average by class
+class_avgs <- aggregate(. ~ Class, data = wine_data, FUN = mean)  
+
+table_avgs <- rbind(overall_avgs, class_avgs[, -1]) # exclude class
+rownames(table_avgs) <- c("Overall", paste("Class", class_avgs$Class)) # row names
+
+print(table_avgs)
+```
+e. 
+We conduct t-tests between classes 1 and 2, 2 and 3, 1 and 3 each with:
+H0: the difference in the mean level of phenols is 0. 
+Ha: the difference in the mean level of phenols not 0. 
+```{r}
+# Conduct Pairwise t-tests
+t_test_1_2 <- t.test(wine_data$`Total phenols`[wine_data$Class == 1],
+                     wine_data$`Total phenols`[wine_data$Class == 2])
+
+t_test_1_3 <- t.test(wine_data$`Total phenols`[wine_data$Class == 1],
+                     wine_data$`Total phenols`[wine_data$Class == 3])
+
+t_test_2_3 <- t.test(wine_data$`Total phenols`[wine_data$Class == 2],
+                     wine_data$`Total phenols`[wine_data$Class == 3])
+
+t_test_1_2
+t_test_1_3
+t_test_2_3
+```
+As seen by the results of the pairwise t-tests, specifically that each t-test had a p-value < 0.01, we reject the null hypotheses. There is sufficient evidence to conclude that the level of phenols differs across the three classes of wine.
+
+2.
+a.
+```{r}
+rm(list = ls())
+
+ask_a_manager <- read.csv("data/AskAManager.csv")
+```
+b.
+```{r}
+ask_a_manager <- ask_a_manager[,-1] # delete first col (obsv. number)
+new_names <- c("Timestamp",
+               "Age",
+               "Industry", 
+               "Job",
+               "Job Details",
+               "Annual Salary",
+               "Additional Compensation",
+               "Currency", 
+               "Currency Other",
+               "Income Details",
+               "Country", 
+               "State if USA", 
+               "City", 
+               "Experience Total",
+               "Experience Field",
+               "Education Level",
+               "Gender",
+               "Race")
+colnames(ask_a_manager) <- new_names
+```
+c.
+```{r}
+observations <- nrow(ask_a_manager)
+print(paste("#obsv before restrictions:", observations))
+
+ask_a_manager <- ask_a_manager[ask_a_manager$Currency == "USD", ]
+observations <- nrow(ask_a_manager)
+print(paste("#obsv after restrictions:", observations))
+```
+d. 
+```{r}
+# change relevant variables to factors
+ask_a_manager[c("Age", "Experience Field", "Experience Total")] <- lapply(ask_a_manager[c("Age", "Experience Field", "Experience Total")], factor)
+
+# check levels
+print("Levels for Age:")
+levels(ask_a_manager$Age)
+print("Levels for Experience Field:")
+levels(ask_a_manager$`Experience Field`)
+print("Levels for Experience Total")
+levels(ask_a_manager$`Experience Total`)
+```
+
+```{r}
+# change relevant variables to ordered factors.
+ask_a_manager$Age <- factor(ask_a_manager$Age, 
+                            levels = c("under 18", "18-24", "25-34", "35-44", "45-54", "55-64", "65 or over"),
+                            ordered = TRUE)
+
+ask_a_manager$`Experience Field` <- factor(ask_a_manager$`Experience Field`, 
+                                           levels = c("1 year or less", "2 - 4 years", "5-7 years", "8 - 10 years", 
+                                                      "11 - 20 years", "21 - 30 years", "31 - 40 years", "41 years or more"),
+                                           ordered = TRUE)
+
+ask_a_manager$`Experience Total` <- factor(ask_a_manager$`Experience Total`, 
+                                           levels = c("1 year or less", "2 - 4 years", "5-7 years", "8 - 10 years", 
+                                                      "11 - 20 years", "21 - 30 years", "31 - 40 years", "41 years or more"),
+                                           ordered = TRUE)
+
+# filter out impossible cases (assume cannot begin work before the age of 18)
+ask_a_manager <- ask_a_manager[
+  !(
+    (ask_a_manager$Age == "under 18") |
+    (ask_a_manager$Age == "18-24" & ask_a_manager$`Experience Total` > "8 - 10 years") |
+    (ask_a_manager$Age == "25-34" & ask_a_manager$`Experience Total` > "21 - 30 years") |
+    (ask_a_manager$Age == "35-44" & ask_a_manager$`Experience Total` > "31 - 40 years") |
+    (ask_a_manager$Age == "45-54" & ask_a_manager$`Experience Total` > "41 years or more") |
+    (ask_a_manager$`Experience Total` < ask_a_manager$`Experience Field`)
+  ) ,
+]
+
+observations <- nrow(ask_a_manager)
+print(paste("#observations after accounting for impossibilities:", observations))
+```
+
+e. 
+I will proceed to eliminate any rows with unreasonably low or high salaries by identifying outliers within each total experience category.
+```{r}
+#' Function to find outliers
+#' 
+#' @param x a vector
+#' @return outlier elements within `x`
+find_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  return(x < lower_bound | x > upper_bound)
+}
+```
+Now, I filter out the observations that have outlier salaries within thier resp. experience category. 
+```{r}
+total_experience_levels <- levels(ask_a_manager$`Experience Total`)
+ask_a_manager_filtered <- data.frame()
+for (l in total_experience_levels) {
+  level_data <- ask_a_manager[ask_a_manager$`Experience Total` == l, ]
+  outliers <- find_outliers(level_data$`Annual Salary`)
+  level_data_filtered <- level_data[!outliers, ]
+  ask_a_manager_filtered <- rbind(ask_a_manager_filtered, level_data_filtered)
+}
+
+observations <- nrow(ask_a_manager_filtered)
+print(paste("final sample size:", observations))
+```
+
+3.
+a.
+```{r}
+#' Function to check if a given positive integer is a palindrome
+#' 
+#' @param n a positive integer
+#' @return A list with two elements: 
+#'  (1) isPalindromic: A logical value indicating if the input`n` is palindromic. 
+#'  (2) reversed: `n` with its digits reversed. 
+isPalindromic <- function(n) {
+  if (!is.numeric(n) || n <= 0 || n != as.integer(n)) {
+    return("Error: input must be a numeric positive integer.")
+  }
+  num_as_string <- as.character(n) # r treats 1.00 as 1 
+  reversed_string <- paste(rev(strsplit(num_as_string, NULL)[[1]]), collapse = "")
+  reversed_num <- as.integer(reversed_string)
+  is_palindromic <- (num_as_string == reversed_string)
+  return(list(isPalindromic = is_palindromic, reversed = reversed_num))
+}
+```
+b.
+```{r}
+#' Function to find the next palindrome 
+#' 
+#' @param n a positive integer
+#' @return the next palindrome strictly greater than `n`
+nextPalindrome <- function(n) {
+  if (!is.numeric(n) || n <= 0 || n != as.integer(n)) {
+    return("Error: input must be a numeric positive integer.")
+  }
+  n <- n + 1 # looking for palindromes strictly greater than n
+  # loop ends if palindrome found
+  while (TRUE) {
+    temp <- isPalindromic(n)
+    if (temp$isPalindromic) {
+      return(n)
+    }
+    n <- n + 1
+  }
+}
+```
+c.
+```{r}
+nextPalindrome(391)
+nextPalindrome(9928)
+nextPalindrome(19272719)
+nextPalindrome(109)
+nextPalindrome(2)
+```
