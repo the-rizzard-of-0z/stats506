@@ -1,6 +1,8 @@
 ---
 title: "stats506hw1"
-format: html
+format: 
+  html:
+    embed-resources: true
 author: Leon Lin
 ---
 
