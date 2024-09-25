@@ -1,0 +1,245 @@
+---
+title: "stats506hw2"
+author: "Leon Lin"
+format: 
+  html:
+    embed-resources: true
+---
+
+[GitHub Repository](https://github.com/the-rizzard-of-0z/stats506.git) 
+
+```{r}
+setwd("/Users/leonlin/Documents/stats506local/stats506")
+```
+
+1. 
+a.
+```{r}
+#' Play Dice Function Version 1
+#' 
+#' @param n a natural number
+#' @return total winnings
+play_dice_v1 <- function(n) {
+  # input buffer
+  if (!is.numeric(n) || n <= 0 || n != as.integer(n)) {
+    return("Error: input must be a numeric positive integer.")
+  }
+  winnings <- 0
+  for (i in 1:n) {
+    winnings <- winnings - 2
+    dice <- sample(1:6, 1)
+    if (dice == 3 | dice == 5) {
+      winnings <- winnings + 2*dice
+    }
+  }
+  return(winnings)
+}
+
+#' Play Dice Function Version 2
+#' 
+#' @param n a natural number
+#' @return total winnings
+play_dice_v2 <- function(n) {
+  # input buffer
+  if (!is.numeric(n) || n <= 0 || n != as.integer(n)) {
+    return("Error: input must be a numeric positive integer.")
+  }
+  dice <- sample(1:6, n, replace = TRUE)
+  dice[dice != 3 & dice != 5] <- 0
+  dice[dice == 3] <- 3*2
+  dice[dice == 5] <- 5*2
+  winnings <- -2*n + sum(dice)
+  return(winnings)
+}
+
+#' Play Dice Function Version 3
+#' 
+#' @param n a natural number
+#' @return total winnings
+play_dice_v3 <- function(n) {
+  # input buffer
+  if (!is.numeric(n) || n <= 0 || n != as.integer(n)) {
+    return("Error: input must be a numeric positive integer.")
+  }
+  dice <- sample(1:6, n, replace = TRUE)
+  dice_table <- table(factor(dice, levels = 1:6)) # ensure all possible face numbers included
+  winnings <- -2*n + as.numeric(dice_table["3"]) * 6 + as.numeric(dice_table["5"]) * 10
+  return(winnings)
+}
+
+#' Play Dice Function Version 4
+#' 
+#' @param n a natural number
+#' @return total winnings
+play_dice_v4 <- function(n) {
+  # input buffer
+  if (!is.numeric(n) || n <= 0 || n != as.integer(n)) {
+    return("Error: input must be a numeric positive integer.")
+  }
+  dice <- sample(1:6, n, replace = TRUE)
+  winnings <- sapply(dice, function(i){
+    ifelse(i == 3, 3*2 - 2, ifelse(i == 5, 5*2 - 2, -2))
+  })
+  winnings <- sum(winnings)
+  return(winnings)
+}
+```
+
+b.
+```{r}
+play_dice_v1(3)
+play_dice_v1(3000)
+
+play_dice_v2(3)
+play_dice_v2(3000)
+
+play_dice_v3(3)
+play_dice_v3(3000)
+
+play_dice_v4(3)
+play_dice_v4(3000)
+```
+
+c. 
+```{r}
+set.seed(77)
+play_dice_v1(3)
+play_dice_v1(3000)
+
+set.seed(77)
+play_dice_v2(3)
+play_dice_v2(3000)
+
+set.seed(77)
+play_dice_v3(3)
+play_dice_v3(3000)
+
+set.seed(77)
+play_dice_v4(3)
+play_dice_v4(3000)
+```
+We see that under the same seed, the four versions give identical results. 
+
+d. 
+```{r}
+library(microbenchmark)
+
+time_1000 <- microbenchmark(
+  v1 = play_dice_v1(1000),
+  v2 = play_dice_v2(1000),
+  v3 = play_dice_v3(1000),
+  v4 = play_dice_v4(1000)
+)
+
+time_100000 <- microbenchmark(
+  v1 = play_dice_v1(100000),
+  v2 = play_dice_v2(100000),
+  v3 = play_dice_v3(100000),
+  v4 = play_dice_v4(100000)
+)
+```
+
+```{r}
+time_1000
+time_100000
+```
+We see that using built-in R vectorized functions is the fastest method of simulation, followed by using a table, then using apply, and finally, the slowest method is using a loop.
+
+e. 
+Lets define a fair game to be one that has an expected return of zero. 
+```{r}
+#' Returns the expected winnings of a single roll of the dice game
+#' 
+#' @param n a natural number
+#' @param play_dice A function that simulates the dice game with `n` rolls.
+#' @return The expected winnings of a single roll.
+mc_sim <- function(n, play_dice){
+  # input buffer
+  if (!is.numeric(n) || n <= 0 || n != as.integer(n)) {
+    return("Error: 'n' must be a numeric positive integer.")
+  }
+  if (!is.function(play_dice)) {
+    return("Error: 'play_dice' must be a function.")
+  }
+  EX <- play_dice(n) / n
+  return(EX)
+}
+
+mc_sim(10000000, play_dice_v2)
+```
+We see that the expected return per roll is 0.66, and hence the dice game is not a fair game. 
+
+2. 
+a. 
+```{r}
+cars <- read.csv("data/cars.csv")
+
+colnames(cars) <- c(
+  "Height", "Length", "Width", "Driveline", "Engine_Type", "Hybrid",
+  "Forward_Gears", "Transmission", "City_MPG", "Fuel_Type", 
+  "Highway_MPG", "Classification", "ID", "Make", "Model_Year", 
+  "Year", "Horsepower", "Torque"
+)
+```
+b. 
+```{r}
+cars_gasoline <- cars[cars$Fuel_Type == "Gasoline", ]
+head(cars_gasoline)
+```
+c. 
+```{r}
+hist(cars_gasoline$Highway_MPG, 
+     main = "Distribution of Highway Gas Mileage", 
+     xlab = "Highway MPG")
+```
+We see that the distribution of highway gas mileage is right skewed. Hence, a log transformation may be appropriate. 
+```{r}
+cars_gasoline$Log_Highway_MPG <- log(cars_gasoline$Highway_MPG)
+```
+
+```{r}
+hist(cars_gasoline$Log_Highway_MPG, 
+     main = "Log Distribution of Highway Gas Mileage", 
+     xlab = "Highway MPG")
+```
+
+d. 
+```{r}
+cars_gasoline$Year <- as.factor(cars_gasoline$Year)
+reg1 <- lm(Log_Highway_MPG ~ Torque + Horsepower + Height + Length + Width + Year, data = cars_gasoline)
+summary(reg1)
+```
+We see that the coeff for Torque (-2.294e-03) is significant (p-value < 2e-16). This suggests that, holding all else constant, for each 1 lb-ft increase in torque, we expect a decrease in highway MPG of approximateley 0.2294%. 
+
+e. 
+```{r}
+reg2 <- lm(Log_Highway_MPG ~ Torque * Horsepower + Height + Length + Width + Year, data = cars_gasoline)
+summary(reg2)
+```
+
+```{r}
+library(interactions)
+horsepower_quantiles <- quantile(cars_gasoline$Horsepower, probs = c(0.25, 0.50, 0.75))
+horsepower_quantiles <- unname(horsepower_quantiles)
+interact_plot(reg2, 
+              pred = Torque, 
+              modx = Horsepower, 
+              modx.values = horsepower_quantiles,  # Choose three quartile levels of horsepower.
+              at = list(Year = factor(2010)),  # Fix Year at 2010
+              main.title = "Interaction Between Torque and Horsepower on Log-Transformed Highway MPG",
+              x.label = "Torque (lb-ft)", 
+              y.label = "Log of Highway MPG",
+              legend.main = "Horsepower Levels")
+```
+f.
+```{r}
+X <- model.matrix(~ Torque + Horsepower + Height + Length + Width + Year, data = cars_gasoline)
+y <- cars_gasoline$Log_Highway_MPG
+
+beta_hat <- solve(t(X) %*% X) %*% t(X) %*% y
+beta_hat
+
+summary(reg1)$coefficients
+```
+Hence, we see that beta-hat is the same.
+
