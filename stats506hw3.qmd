@@ -1,7 +1,9 @@
 ---
 title: "stats506hw3"
-author: "leon lin"
-format: html
+author: "Leon Lin"
+format: 
+  html:
+    embed-resources: true
 ---
 
 [GitHub Repository](https://github.com/the-rizzard-of-0z/stats506.git) 
