@@ -270,7 +270,7 @@ us_500 %>%
   theme_minimal()
 
 ```
-
+e.
 ```{r}
 # extract numeric vector of leading digits
 leading_digits <- us_500 %>%
