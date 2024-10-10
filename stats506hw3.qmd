@@ -1,0 +1,292 @@
+---
+title: "stats506hw3"
+author: "leon lin"
+format: html
+---
+
+[GitHub Repository](https://github.com/the-rizzard-of-0z/stats506.git) 
+
+```{r}
+setwd("/Users/leonlin/Documents/stats506local/stats506")
+library(haven)
+library(tidyverse)
+library(knitr)
+library(DBI)
+library(RSQLite)
+library(stringr)
+```
+
+1. 
+a. 
+```{r}
+DEMO_D <- read_xpt("data/DEMO_D.XPT")
+VIX_D <- read_xpt("data/VIX_D.XPT")
+merged_data <- inner_join(DEMO_D, VIX_D, by = "SEQN")
+cat("Total sample size after merging is:", nrow(merged_data), "\n")
+```
+
+b.
+```{r}
+table_1_b <- merged_data %>% 
+  mutate(Age_Bracket = cut(RIDAGEYR, breaks = seq(0, 80, by = 10), include.lowest = TRUE,
+                           labels = c("0-9", "10-19", "20-29", "30-39", "40-49", 
+                                      "50-59", "60-69", "70-79"))) %>% 
+  group_by(Age_Bracket) %>%
+  filter(!(is.na((Age_Bracket))) & !(is.na((VIQ220)))) %>%
+  summarize(Proportion = round(sum(VIQ220 == 1) / n(), 3)) 
+
+# Output table.
+table_1_b %>%
+  kable(
+    format = "html", 
+    col.names = c("Age Bracket", "Proportion"),
+    caption = "Proportion of Respondents Wearing Glasses/Contact Lenses for Distance Vision by Age Group",
+    align = c("c")
+  ) 
+```
+
+c. 
+Note our refrence levels for gender: male, and race/ethnicity: Mexican american
+```{r}
+# Ignore missing values or "Dont know" values. Rename factor variables. 
+merged_data <- merged_data %>%
+  filter(VIQ220 == 1 | VIQ220 == 2) %>%
+  mutate(
+    VIQ220 = ifelse(VIQ220 == 2, 0, VIQ220),
+    # Rename factor variables with meaningful labels
+    RIAGENDR = factor(RIAGENDR, levels = c(1, 2), labels = c("Male", "Female")),
+    RIDRETH1 = factor(RIDRETH1, levels = c(1, 2, 3, 4, 5), 
+                      labels = c("Mexican American", "Other Hispanic", 
+                                 "Non-Hispanic White", "Non-Hispanic Black", 
+                                 "Other Race"))
+  )
+  
+  
+# Fit models.
+model1 <- glm(VIQ220 ~ RIDAGEYR, family = binomial, data = merged_data)
+model2 <- glm(VIQ220 ~ RIDAGEYR + factor(RIDRETH1) + factor(RIAGENDR), family = binomial, data = merged_data)
+model3 <- glm(VIQ220 ~ RIDAGEYR + factor(RIDRETH1) + factor(RIAGENDR) + INDFMPIR, family = binomial, data = merged_data)
+```
+
+```{r}
+#' Extract Model Odds Ratios
+#' 
+#' @param model a fitted logistic reg model
+#' @return odds ratios of model coeffs
+get_odds_ratios <- function(model) {
+  odds_ratios <- exp(coef(summary(model))[, "Estimate"])
+  return(odds_ratios)
+}
+
+#' Calculate Pseudo R^2
+#' 
+#' @param model a fitted logistic reg model
+#' @return pseudo r^2
+pseudo_r2 <- function(model) {
+  1 - (model$deviance / model$null.deviance)
+}
+
+#' creates table presenting the estimated odds ratios,  sample size for the model, pseudo-R2, and AIC value for a model. 
+#' 
+#' @param model a fitted logistic reg model
+#' @param name desired name of the model
+#' @return table depicting
+create_table <- function(model, name) {
+  odds_ratios <- round(get_odds_ratios(model),3)
+  
+  odds_df <- as.data.frame(t(odds_ratios))
+  colnames(odds_df) <- names(odds_ratios)
+  
+  # clean col names
+  colnames(odds_df) <- gsub("factor\\(|\\)|RIDRETH1|RIAGENDR", "", colnames(odds_df))
+  colnames(odds_df) <- gsub("\\(|\\)", "", colnames(odds_df))
+  colnames(odds_df)[colnames(odds_df) == "RIDAGEYR"] <- "Age"
+  colnames(odds_df)[colnames(odds_df) == "INDFMPIR"] <- "PIR"
+  
+  odds_df$Model <- name
+  odds_df$Sample_Size <- model$nobs 
+  odds_df$Pseudo_R2 <- round(pseudo_r2(model), 3)
+  odds_df$AIC <- round(AIC(model), 3)
+  
+  return(odds_df)
+}
+```
+
+```{r}
+model1_table <- create_table(model1, "Model 1")
+model2_table <- create_table(model2, "Model 2")
+model3_table <- create_table(model3, "Model 3")
+
+summary_table <- bind_rows(model1_table, model2_table, model3_table) %>% 
+  select(Model, everything())
+
+summary_table %>%
+  kable(
+    format = "html", 
+    caption = "Model Summary Table: Estimated Odds Ratios, Sample Size, Pseudo-R², and AIC",
+    align = c("c")
+  ) 
+```
+
+d. 
+Recall that in our logistic regressions, our reference level for gender is: Male.
+
+Proceed with Wald's test to test whether the odds of men and women being wears of glasess/contact lenses for distance vision differs while controlling for race, age, and PIR.
+H0: coeff_female_model3 = 1 Ha: coeff_female_model3 != 1
+```{r}
+coef_gender_female <- summary(model3)$coefficients["factor(RIAGENDR)Female", "Estimate"]
+se_gender_female <- summary(model3)$coefficients["factor(RIAGENDR)Female", "Std. Error"]
+
+# Walds statsitc
+wald_stat <- coef_gender_female / se_gender_female
+p_value_wald <- 2 * (1 - pnorm(abs(wald_stat)))
+
+paste0("p-value: ", p_value_wald)
+```
+
+Since p-value small, there is sufficient evidence to reject the null hypothesis. There is evidence to support the claim that the odds of wearing glasses/contact lenses for distance vision differ between men and women. 
+
+Proceed with Fisher's Exact test to test whether the proportion of wearers of glasses/contact lenses for distance vision differs between men and women.
+H0: proportion male - proportion female = 0, Ha:proportion male - proportion female != 0
+```{r}
+contingency_table <- table(merged_data$RIAGENDR, merged_data$VIQ220)
+fisher_test_result <- fisher.test(contingency_table)
+fisher_test_result
+```
+Since p-value small, there is sufficient evidence to reject the null hypothesis. There is evidence to support the claim that the proportion of wearers of glasses/contact lenses for distance vision differs between men and women.
+
+2. 
+```{r}
+sakila <- dbConnect(RSQLite::SQLite(), "data/sakila_master.db")
+```
+
+a.
+```{r}
+dbGetQuery(sakila, "
+SELECT release_year, COUNT(*) as movie_count
+    FROM film
+  GROUP BY release_year
+  ORDER BY release_year ASC
+  LIMIT 1;
+")
+```
+Thus, the oldest movie came from 2006, and 1000 movies were released that year.
+
+b. 
+```{r}
+film <- dbGetQuery(sakila,"SELECT * FROM film")
+category <- dbGetQuery(sakila,"SELECT * FROM category")
+film_category <- dbGetQuery(sakila,"SELECT * FROM film_category")
+
+film_category %>% 
+  left_join(category, by = "category_id") %>%
+  group_by(name) %>% 
+  summarize(count = n()) %>% 
+  arrange(count) %>% 
+  head(5)
+
+dbGetQuery(sakila, "
+SELECT c.name, COUNT(fc.film_id) AS count
+    FROM film_category fc
+  JOIN category c ON fc.category_id = c.category_id
+  GROUP BY c.name
+  ORDER BY count ASC
+  LIMIT 5;
+")
+```
+We see that the genre least common in the data is music, with 51 movies. 
+
+c. 
+```{r}
+country <- dbGetQuery(sakila,"SELECT * FROM country")
+city <- dbGetQuery(sakila,"SELECT * FROM city")
+address <- dbGetQuery(sakila,"SELECT * FROM address")
+customer <- dbGetQuery(sakila,"SELECT * FROM customer")
+
+customer %>% 
+  left_join(address, by = "address_id") %>%
+  left_join(city, by = "city_id") %>% 
+  left_join(country, by = "country_id") %>%
+  group_by(country) %>%
+  summarize(total_customers = n()) %>% 
+  filter(total_customers == 13)
+
+dbGetQuery(sakila, "
+SELECT country, COUNT(*) AS total_customers
+    FROM 
+    customer LEFT JOIN address ON customer.address_id = address.address_id
+      LEFT JOIN city ON address.city_id = city.city_id
+        LEFT JOIN country ON city.country_id = country.country_id
+GROUP BY country
+HAVING COUNT(*) = 13;
+")
+```
+We see that Argentina and Nigeria have exactly 13 total customers. 
+
+3.
+```{r}
+us_500 <- read.csv("data/us-500.csv")
+```
+
+a.
+```{r}
+us_500 %>%
+  mutate(email_tld = str_extract(email, "\\.[a-z]+$")) %>%
+  summarize(proportion = mean(email_tld == ".com"))
+```
+b.
+```{r}
+us_500 %>%
+  mutate(has_non_alphanumeric = str_detect(email, "[^a-zA-Z0-9@.]")) %>%
+  summarize(proportion = mean(has_non_alphanumeric))
+```
+
+c. 
+```{r}
+us_500 %>%
+  mutate(area_code1 = str_extract(phone1, "^\\d{3}"), 
+         area_code2 = str_extract(phone2, "^\\d{3}")) %>%
+  pivot_longer(cols = c(area_code1, area_code2), names_to = "type", values_to = "area_code") %>%
+  group_by(area_code) %>% 
+  summarise(n=n()) %>% 
+  arrange(-n) %>% 
+  head(6)
+```
+Hence, the most 5 popular area codes are 973, 212, 215, 410, and 201.
+
+d. 
+```{r}
+us_500 %>%
+  mutate(apartment_number = as.numeric(str_extract(address, "\\d+$"))) %>%
+  filter(!is.na(apartment_number)) %>%
+  mutate(log_apartment_number = log(apartment_number)) %>%
+  ggplot(aes(x = log_apartment_number)) +
+  geom_histogram(binwidth = 2, fill = "skyblue", color = "black", boundary = 0) +  # Set bin boundary to 0
+  labs(title = "Histogram of Log of Apartment Numbers",
+       x = "Log of Apartment Number",
+       y = "Frequency") +
+  theme_minimal()
+
+```
+
+```{r}
+# extract numeric vector of leading digits
+leading_digits <- us_500 %>%
+  mutate(apartment_number = as.numeric(str_extract(address, "\\d+$"))) %>%
+  filter(!is.na(apartment_number)) %>% 
+  mutate(leading_digit = substr(as.character(apartment_number), 1, 1)) %>%
+  pull(leading_digit) %>% 
+  as.numeric()
+
+# we conduct a chi-sq test to see if the distribution of leading digits from the data follows benford's law.
+benford_probs <- log10(1 + 1 / (1:9))
+observed <- table(factor(leading_digits, levels = 1:9))
+chisq.test(observed, p = benford_probs)
+```
+Since p-value is small, there is sufficient evidence to reject the null hypothesis that the distribution of the observed leading digits of apartment numbers follows Benford's Law.
+
+
+
+
+
+
