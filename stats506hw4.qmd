@@ -25,7 +25,7 @@ filtered_flights <- flights %>%
   filter(n() >= 10) %>%
   ungroup()
 
-departure_delay_table <- flights %>%
+departure_delay_table <- filtered_flights %>%
   group_by(origin) %>%
   summarize(
     mean_departure_delay = mean(dep_delay, na.rm = TRUE),
@@ -38,7 +38,7 @@ departure_delay_table <- flights %>%
 
 departure_delay_table
 
-arrival_delay_table <- flights %>%
+arrival_delay_table <- filtered_flights %>%
   group_by(dest) %>%
   summarize(
     mean_arrival_delay = mean(arr_delay, na.rm = TRUE),
