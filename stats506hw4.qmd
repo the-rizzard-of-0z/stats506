@@ -20,6 +20,11 @@ library(nycflights13)
 
 a)
 ```{r}
+filtered_flights <- flights %>%
+  group_by(dest) %>%
+  filter(n() >= 10) %>%
+  ungroup()
+
 departure_delay_table <- flights %>%
   group_by(origin) %>%
   summarize(
@@ -27,7 +32,6 @@ departure_delay_table <- flights %>%
     median_departure_delay = median(dep_delay, na.rm = TRUE),
     flight_count = n()
   ) %>%
-  filter(flight_count >= 10) %>%
   inner_join(airports, by = c("origin" = "faa")) %>%
   select(name, mean_departure_delay, median_departure_delay) %>%
   arrange(desc(mean_departure_delay))
@@ -41,7 +45,6 @@ arrival_delay_table <- flights %>%
     median_arrival_delay = median(arr_delay, na.rm = TRUE),
     flight_count = n()
   ) %>%
-  filter(flight_count >= 10) %>%
   inner_join(airports, by = c("dest" = "faa")) %>%
   select(name, mean_arrival_delay, median_arrival_delay) %>%
   arrange(desc(mean_arrival_delay))
