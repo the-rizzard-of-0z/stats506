@@ -1,0 +1,225 @@
+---
+title: "stats506hw4"
+format: 
+  html:
+    embed-resources: true
+author: Leon Lin
+---
+
+[GitHub Repository](https://github.com/the-rizzard-of-0z/stats506.git) 
+
+```{r}
+setwd("/Users/leonlin/Documents/stats506local/stats506")
+```
+
+1.
+```{r}
+library(tidyverse)
+library(nycflights13)
+```
+
+a)
+```{r}
+departure_delay_table <- flights %>%
+  group_by(origin) %>%
+  summarize(
+    mean_departure_delay = mean(dep_delay, na.rm = TRUE),
+    median_departure_delay = median(dep_delay, na.rm = TRUE),
+    flight_count = n()
+  ) %>%
+  filter(flight_count >= 10) %>%
+  inner_join(airports, by = c("origin" = "faa")) %>%
+  select(name, mean_departure_delay, median_departure_delay) %>%
+  arrange(desc(mean_departure_delay))
+
+departure_delay_table
+
+arrival_delay_table <- flights %>%
+  group_by(dest) %>%
+  summarize(
+    mean_arrival_delay = mean(arr_delay, na.rm = TRUE),
+    median_arrival_delay = median(arr_delay, na.rm = TRUE),
+    flight_count = n()
+  ) %>%
+  filter(flight_count >= 10) %>%
+  inner_join(airports, by = c("dest" = "faa")) %>%
+  select(name, mean_arrival_delay, median_arrival_delay) %>%
+  arrange(desc(mean_arrival_delay))
+
+arrival_delay_table
+```
+b)
+```{r}
+fastest_plane <- flights %>%
+  filter(!is.na(air_time) & !is.na(tailnum)) %>%
+  mutate(speed_mph = distance / (air_time / 60)) %>%
+  inner_join(planes, by = "tailnum") %>%
+  group_by(model) %>%
+  summarize(
+    avg_speed_mph = mean(speed_mph, na.rm = TRUE),
+    num_flights = n()
+  ) %>%
+  arrange(desc(avg_speed_mph)) %>%
+  slice(1) %>%
+  select(model, avg_speed_mph, num_flights)
+
+fastest_plane
+```
+2. 
+```{r}
+nnmaps <- read.csv("data/chicago-nmmaps.csv")
+
+#' Function to request the average temperature for a given month
+#' 
+#' @param month A string--full or abbreviated--or numeric value representing the month.
+#' @param year A numeric value representing the year.
+#' @param data A dataset containing temperature data with `year`, `month`, and `temp` columns.
+#' @param celsius A logical value indicating whether or not to return the temperature in Celsius. Defaults to `FALSE`.
+#' @param average_fn A function used to compute the mean temperature. Defaults to `mean`.
+#' @return A numeric vector of length 1 representing the average temperature for the specified month and year.
+get_temp <- function(month, year, data, celsius = FALSE, average_fn = mean) {
+  # Input sanitation: year
+  if (!is.numeric(year) || length(year) != 1) {
+    return("Year must be a single numeric value.")
+  }
+  # Convert inputted month name / number to number
+  month_num <- month
+  if (is.character(month)) {
+    month_num <- match(tolower(month), tolower(month.name))
+    if (is.na(month_num)) {
+      month_num <- match(tolower(month), tolower(month.abb))
+    }
+    if (is.na(month_num)) {
+      return("Invalid month name.")
+    }
+  }
+  # Input sanitation: month
+  if (!is.numeric(month_num) || month_num < 1 || month_num > 12) {
+    return("Month must be a numeric value between 1 and 12 or a valid month name.")
+  }
+  result <- data %>%
+    filter(year == year, month_numeric == month_num) %>%
+    summarize(avg_temp = average_fn(temp)) %>%
+    pull(avg_temp)
+  if (celsius) {
+    result <- (result - 32) * (5 / 9)
+  }
+  return(result)
+}
+```
+
+```{r}
+get_temp("Apr", 1999, data = nnmaps)
+get_temp("Apr", 1999, data = nnmaps, celsius = TRUE)
+get_temp(10, 1998, data = nnmaps, average_fn = median)
+get_temp(13, 1998, data = nnmaps)
+get_temp(2, 2005, data = nnmaps)
+get_temp("November", 1999, data =nnmaps, celsius = TRUE,
+         average_fn = function(x) {
+           x %>% sort -> x
+           x[2:(length(x) - 1)] %>% mean %>% return
+         })
+```
+3. 
+```{r}
+library(ggplot2)
+art_sales <- read.csv("data/df_for_ml_improved_new_market.csv")
+```
+
+a.
+```{r}
+yearly_stats <- art_sales %>%
+  group_by(year) %>%
+  summarize(
+    median_price = median(price_usd, na.rm = TRUE),
+    mean_price = mean(price_usd, na.rm = TRUE)
+  )
+
+ggplot(art_sales, aes(x = factor(year), y = price_usd)) +
+  geom_boxplot(outlier.color = "gray", outlier.shape = 16, outlier.size = 1, alpha = 0.7) +
+  geom_line(data = yearly_stats, aes(x = factor(year), y = mean_price, group = 1), color = "red", size = 1) +
+  coord_cartesian(ylim = c(0, 100000)) +  # Adjust the upper limit to fit the main data range
+  labs(title = "Distribution of Sales Price Over Time (Zoomed In)",
+       x = "Year",
+       y = "Price / USD",
+       subtitle = "Boxplots of Sales Price by Year with Mean Sales Price Trend Line") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Looking at the plot, we observe that the annual mean sales price has been increasing over time, while the annual median sales price has also risen, albeit at a slower and less convincing rate. This suggests that sales prices have been rising over time. The increasing presence of positive outliers as time progresses indicates a growing frequency of high-value sales, which drives the mean upward more significantly than the median.
+
+b.
+```{r}
+art_sales <- art_sales %>%
+  mutate(Genre = case_when(
+    Genre___Photography == 1 ~ "Photography",
+    Genre___Print == 1 ~ "Print",
+    Genre___Sculpture == 1 ~ "Sculpture",
+    Genre___Painting == 1 ~ "Painting",
+    Genre___Others == 1 ~ "Others"
+  ))
+
+genre_proportions <- art_sales %>%
+  count(year, Genre) %>%
+  group_by(year) %>%
+  mutate(prop = n / sum(n)) 
+
+ggplot(genre_proportions, aes(x = as.numeric(year), y = prop, fill = Genre)) +
+  geom_bar(stat = "identity", position = "fill", width = 1) +
+  scale_x_continuous(breaks = unique(genre_proportions$year)) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Distribution of Genre Sales by Year",
+       x = "Year",
+       y = "Proportion of Sales",
+       fill = "Genre") +  # Add legend title for "Genre"
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Looking at the plot, we observe that in the earlier years, art sales were dominated by the genres of painting and sculpture, with some presence of photography. As time progresses, the prominence of painting has decreased, while print has emerged, and sales are now primarily dominated by photography and sculpture.
+
+c. 
+```{r}
+yearly_means <- art_sales %>%
+  group_by(year) %>%
+  summarize(overall_mean_price = mean(price_usd, na.rm = TRUE),
+            total_sales = n())  
+
+genre_year_means <- art_sales %>%
+  group_by(year, Genre) %>%
+  summarize(
+    genre_mean_price = mean(price_usd, na.rm = TRUE),
+    sales_count = n() 
+  ) %>%
+  left_join(yearly_means, by = "year") %>%
+  mutate(
+    proportion_of_sales = sales_count / total_sales,  
+    deviation_from_mean = genre_mean_price - overall_mean_price
+  )
+
+ggplot() +
+  geom_point(data = genre_year_means, aes(x = as.numeric(year), y = genre_mean_price, color = Genre, size = proportion_of_sales), alpha = 0.7) +
+  geom_line(data = genre_year_means, aes(x = as.numeric(year), y = genre_mean_price, color = Genre), size = 0.4, alpha = 0.4) +
+  geom_line(data = yearly_means, aes(x = as.numeric(year), y = overall_mean_price, color = "Overall Mean"),
+            size = 1.2) +
+  scale_color_manual(name = NULL, 
+                     values = c("Overall Mean" = "red", 
+                                "Photography" = "blue", 
+                                "Print" = "green", 
+                                "Sculpture" = "purple", 
+                                "Painting" = "orange", 
+                                "Others" = "brown"),
+                     breaks = c("Overall Mean", "Photography", "Print", "Sculpture", "Painting", "Others"),
+                     guide = guide_legend(override.aes = list(
+                       linetype = c("solid", "blank", "blank", "blank", "blank", "blank"),  
+                       shape = c(NA, 16, 16, 16, 16, 16),   
+                       size = c(1.2, 2, 2, 2, 2, 2)))) +  
+  scale_size_continuous(name = "Proportion of Annual Sales", range = c(1, 6), labels = scales::percent) +
+  scale_x_continuous(breaks = unique(genre_year_means$year)) +
+  labs(title = "Mean Sales Price Over Time by Genre",
+       x = "Year",
+       y = "Price (USD)",
+       subtitle = "Average Sales Price by Genre with Overall Mean Trend Line and Sales Proportion by Genre") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Looking at the plot, we observe that the sales prices of each genre appear to be increasing, with trends for the genre 'Others' remaining inconclusive. The genre 'Photography' exhibits substantially more growth in sales price over time compared to the other genres, which show more similar trends to each other. Furthermore, as photography holds a considerable proportion of total sales, its rising prices contribute most towards the magnitude of the upward trend in the overall mean sales price.
