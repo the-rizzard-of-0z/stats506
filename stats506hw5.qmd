@@ -1,0 +1,341 @@
+---
+title: "stats506hw5"
+format: 
+  html:
+    embed-resources: true
+author: Leon Lin
+---
+
+[GitHub Repository](https://github.com/the-rizzard-of-0z/stats506.git) 
+
+```{r}
+setwd("/Users/leonlin/Documents/stats506local/stats506")
+```
+
+1.a.
+```{r}
+library(Rcpp)
+
+# define GCD and LCM
+sourceCpp(code = "
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+int gcd(int a, int b) {
+    while (b != 0) {
+        int temp = b;
+        b = a % b;
+        a = temp;
+    }
+    return abs(a);
+}
+
+// [[Rcpp::export]]
+int lcm(int a, int b) {
+    return abs(a * (b / gcd(a, b)));
+}
+")
+
+setClass(
+  "Rational",
+  slots = list(
+    numerator = "numeric",
+    denominator = "numeric"
+  ),
+  validity = function(object) {
+    if (object@denominator == 0) {
+      stop("denominator cannot be zero")
+    }
+    TRUE
+  }
+)
+
+# constructor
+Rational <- function(numerator, denominator) {
+  new("Rational", numerator = numerator, denominator = denominator)
+}
+
+# show method
+setMethod("show", "Rational", function(object) {
+  cat(sprintf("%d/%d\n", object@numerator, object@denominator))
+})
+
+# simplify method
+setGeneric("simplify", function(object) standardGeneric("simplify"))
+setMethod("simplify", "Rational", function(object) {
+  div <- gcd(object@numerator, object@denominator)
+  Rational(object@numerator / div, object@denominator / div)
+})
+
+# quotient method
+setGeneric("quotient", function(object, digits = NULL) standardGeneric("quotient"))
+setMethod("quotient", "Rational", function(object, digits = NULL) {
+  q <- object@numerator / object@denominator  
+
+  if (!is.null(digits)) {
+    if (!is.numeric(digits) || digits %% 1 != 0 || digits < 0) {
+      stop("digits must be a natural number")
+    }
+    print(format(q, digits = digits))  
+  } else {
+    print(q)  
+  }
+
+  return(q)  
+})
+
+
+# addition
+setMethod("+", c("Rational", "Rational"), function(e1, e2) {
+  denom <- lcm(e1@denominator, e2@denominator)
+  num <- (e1@numerator * (denom / e1@denominator)) + (e2@numerator * (denom / e2@denominator))
+  simplify(Rational(num, denom))
+})
+
+# subtraction
+setMethod("-", c("Rational", "Rational"), function(e1, e2) {
+  denom <- lcm(e1@denominator, e2@denominator)
+  num <- (e1@numerator * (denom / e1@denominator)) - (e2@numerator * (denom / e2@denominator))
+  simplify(Rational(num, denom))
+})
+
+# multiplication
+setMethod("*", c("Rational", "Rational"), function(e1, e2) {
+  simplify(Rational(e1@numerator * e2@numerator, e1@denominator * e2@denominator))
+})
+
+# division
+setMethod("/", c("Rational", "Rational"), function(e1, e2) {
+  if (e2@numerator == 0) stop("division by zero is undefined")
+  simplify(Rational(e1@numerator * e2@denominator, e1@denominator * e2@numerator))
+})
+```
+
+1.b.
+```{R, error = TRUE}
+
+# create objects
+r1 <- Rational(24, 6)
+r2 <- Rational(7, 230)
+r3 <- Rational(0, 4)
+
+# testing code
+r1  # 3/4
+r3  # 1/4 (after simplification)
+r1 + r2
+r1 - r2
+r1 * r2
+r1 / r2
+r1 + r3
+r1 * r3
+r2 / r3
+quotient(r1)
+quotient(r2)
+quotient(r2, digits = 3)
+quotient(r2, digits = 3.14)
+quotient(r2, digits = "avocado")
+q2 <- quotient(r2, digits = 3)
+q2
+quotient(r3)
+simplify(r1)
+simplify(r2)
+simplify(r3)
+```
+
+1.c.
+```{r}
+# zero as denominator
+tryCatch({
+  Rational(1, 0)
+}, error = function(e) {
+  cat("Error:", e$message, "\n")
+})
+
+# other malformed input
+tryCatch({
+  Rational("a", 2)
+}, error = function(e) {
+  cat("Error:", e$message, "\n")
+})
+```
+
+2.a. 
+```{r}
+library(ggplot2)
+art_sales <- read.csv("data/df_for_ml_improved_new_market.csv")
+
+library(plotly)
+library(dplyr)
+
+art_sales <- art_sales %>%
+  mutate(Genre = case_when(
+    Genre___Photography == 1 ~ "Photography",
+    Genre___Print == 1 ~ "Print",
+    Genre___Sculpture == 1 ~ "Sculpture",
+    Genre___Painting == 1 ~ "Painting",
+    Genre___Others == 1 ~ "Others"
+  ))
+
+genre_proportions <- art_sales %>%
+  count(year, Genre) %>%
+  group_by(year) %>%
+  mutate(prop = n / sum(n)) 
+
+plotly_plot <- plot_ly(
+  data = genre_proportions,
+  x = ~as.numeric(year),
+  y = ~prop,
+  color = ~Genre,
+  type = 'bar',
+  text = ~paste("Year:", year, "<br>Genre:", Genre, "<br>Proportion:", scales::percent(prop, accuracy = 0.1)),
+  hoverinfo = 'text',
+  barmode = 'stack'
+) %>%
+  layout(
+    title = "Distribution of Genre Sales by Year",
+    xaxis = list(
+      title = "Year",
+      tickvals = unique(as.numeric(genre_proportions$year)),
+      ticktext = unique(genre_proportions$year)
+    ),
+    yaxis = list(
+      title = "Proportion of Sales",
+      tickformat = ".0%"
+    ),
+    barmode = 'relative',
+    legend = list(title = list(text = "Genre"))
+  )
+
+plotly_plot
+```
+
+2.b.
+```{r}
+art_sales <- art_sales %>%
+  mutate(Genre = case_when(
+    Genre___Photography == 1 ~ "Photography",
+    Genre___Print == 1 ~ "Print",
+    Genre___Sculpture == 1 ~ "Sculpture",
+    Genre___Painting == 1 ~ "Painting",
+    Genre___Others == 1 ~ "Others"
+  ))
+
+genre_data <- art_sales %>%
+  group_by(year, Genre) %>%
+  summarize(avg_price_usd = mean(meanprice_year, na.rm = TRUE), .groups = "drop")
+
+overall_data <- art_sales %>%
+  group_by(year) %>%
+  summarize(avg_price_usd = mean(meanprice_year, na.rm = TRUE)) %>%
+  mutate(Genre = "Overall")
+
+combined_data <- bind_rows(genre_data, overall_data)
+
+plotly_plot <- plot_ly(
+  data = combined_data,
+  x = ~as.numeric(year),
+  y = ~avg_price_usd,
+  color = ~Genre,
+  type = 'scatter',
+  mode = 'lines+markers',
+  text = ~paste(
+    "Year:", year,
+    "<br>Genre:", Genre,
+    "<br>Avg Sales Price (USD): $", round(avg_price_usd, 2)
+  ),
+  hoverinfo = 'text'
+) %>%
+  layout(
+    title = "Change in Sales Price Over Time (Overall and by Genre)",
+    xaxis = list(
+      title = "Year",
+      tickvals = unique(as.numeric(combined_data$year)),
+      ticktext = unique(combined_data$year)
+    ),
+    yaxis = list(
+      title = "Average Sales Price (USD)",
+      tickprefix = "$"
+    ),
+    legend = list(
+      title = list(text = "Genre"),
+      orientation = "h",
+      xanchor = "center",
+      x = 0.5,
+      y = -0.2
+    )
+  )
+
+plotly_plot
+```
+
+3. 
+```{r}
+library(data.table)
+library(nycflights13)
+
+flights_dt <- as.data.table(flights)
+airports_dt <- as.data.table(airports)
+planes_dt <- as.data.table(planes)
+```
+a. 
+```{r}
+filtered_flights_dt <- flights_dt[, .N, by = dest][N >= 10][
+  , .(dest)][flights_dt, on = "dest"]
+
+departure_delay_table_dt <- filtered_flights_dt[
+  , .(
+    mean_departure_delay = mean(dep_delay, na.rm = TRUE),
+    median_departure_delay = median(dep_delay, na.rm = TRUE),
+    flight_count = .N
+  ), by = origin
+][airports_dt, on = .(origin = faa)][
+  , .(name, mean_departure_delay, median_departure_delay)
+][order(-mean_departure_delay)]
+
+print(departure_delay_table_dt)
+```
+
+b. 
+```{r}
+arrival_delay_table_dt <- filtered_flights_dt[
+  , .(
+    mean_arrival_delay = mean(arr_delay, na.rm = TRUE),
+    median_arrival_delay = median(arr_delay, na.rm = TRUE),
+    flight_count = .N
+  ), by = dest
+][airports_dt, on = .(dest = faa)][
+  , .(name, mean_arrival_delay, median_arrival_delay)
+][order(-mean_arrival_delay)]
+
+print(arrival_delay_table_dt)
+```
+
+c. 
+```{r}
+# reload data
+flights_dt <- as.data.table(flights)
+planes_dt <- as.data.table(planes)
+
+valid_flights_dt <- flights_dt[
+  !is.na(air_time) & !is.na(tailnum) & !is.na(distance)
+]
+
+valid_flights_dt[, speed_mph := distance / (air_time / 60)]
+
+joined_data <- valid_flights_dt[
+  planes_dt, on = "tailnum", nomatch = 0  
+]
+
+fastest_plane_dt <- joined_data[
+  , .(
+    avg_speed_mph = mean(speed_mph, na.rm = TRUE),
+    num_flights = .N
+  ), by = model
+][order(-avg_speed_mph)] 
+
+fastest_plane_dt <- fastest_plane_dt[1, .(model, avg_speed_mph, num_flights)]
+
+print(fastest_plane_dt)
+
+```
