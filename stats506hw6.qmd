@@ -1,0 +1,197 @@
+---
+title: "stats506hw5"
+format: 
+  html:
+    embed-resources: true
+author: Leon Lin
+---
+
+[GitHub Repository](https://github.com/the-rizzard-of-0z/stats506.git) 
+
+```{r}
+setwd("/Users/leonlin/Documents/stats506local/stats506")
+```
+
+1. 
+
+a.
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(parallel)
+library(future)
+library(furrr)
+
+Fielding <- as.data.frame(Lahman::Fielding) # to knit
+
+# range factor
+Fielding <- Fielding %>%
+  mutate(RF = (PO + A) / (InnOuts / 3)) %>%
+  filter(!is.infinite(RF), !is.na(RF)) # remove na
+
+# average range factor by team
+team_rf <- Fielding %>%
+  group_by(teamID) %>%
+  summarize(avg_RF = mean(RF, na.rm = TRUE), .groups = "drop")
+
+# top 10 teams by average RF
+top_10_teams <- team_rf %>%
+  arrange(desc(avg_RF)) %>%
+  slice(1:10)
+
+# stratified bootstrap function
+stratified_bootstrap <- function(data, n_reps = 1000) {
+  team_bootstrap <- function(data_team) {
+    replicate(n_reps, {
+      sample_data <- data_team %>%
+        slice_sample(n = n(), replace = TRUE)
+      mean(sample_data$RF, na.rm = TRUE)
+    })
+  }
+  
+  data %>%
+    group_by(teamID) %>%
+    summarize(
+      boot_means = list(team_bootstrap(cur_data())),
+      .groups = "drop"
+    )
+}
+
+# bootstrap without parallel processing
+no_parallel <- stratified_bootstrap(Fielding, n_reps = 1000)
+
+# bootstrap with arallel processing
+cl <- makeCluster(detectCores() / 2)
+clusterEvalQ(cl, library(dplyr))
+clusterExport(cl, varlist = c("Fielding", "stratified_bootstrap"))
+parallel_bootstrap <- parLapply(cl, split(Fielding, Fielding$teamID), function(data_team) {
+  replicate(100, {
+    sample_data <- data_team[sample(nrow(data_team), replace = TRUE), ]
+    mean(sample_data$RF, na.rm = TRUE)
+  })
+})
+stopCluster(cl)
+
+# combine parallel bootstrap results
+parallel_bootstrap_df <- do.call(rbind, lapply(parallel_bootstrap, function(rf_values) {
+  tibble(
+    RF = rf_values
+  )
+})) %>%
+  mutate(teamID = rep(names(parallel_bootstrap), each = 100)) # teamID to match RF length
+
+# future for parallel
+plan(multisession, workers = detectCores() / 2)
+future_bootstrap <- Fielding %>%
+  group_split(teamID) %>%
+  future_map_dfr(~ tibble(
+    teamID = unique(.x$teamID),
+    RF = replicate(1000, mean(slice_sample(.x, n = nrow(.x), replace = TRUE)$RF, na.rm = TRUE))
+  ))
+
+# combine results
+results <- bind_rows(
+  tibble(
+    Approach = "No Parallel",
+    teamID = rep(no_parallel$teamID, each = 1000), # Repeat each teamID for each bootstrap replicate
+    RF = unlist(no_parallel$boot_means)
+  ),
+  tibble(
+    Approach = "Parallel",
+    teamID = parallel_bootstrap_df$teamID, # Match teamID with RF values
+    RF = parallel_bootstrap_df$RF
+  ),
+  tibble(
+    Approach = "Future",
+    teamID = future_bootstrap$teamID, # Already correctly sized in future_bootstrap
+    RF = future_bootstrap$RF
+  )
+) %>%
+  filter(teamID %in% top_10_teams$teamID)
+
+# Generate summary table for all results
+results_summary <- results %>%
+  group_by(Approach, teamID) %>%
+  summarize(
+    avg_RF = mean(RF, na.rm = TRUE),
+    se_RF = sd(RF, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+b.
+```{r}
+no_parallel_summary <- results_summary %>%
+  filter(Approach == "No Parallel") %>%
+  arrange(desc(avg_RF)) %>%
+  slice(1:10) # Top 10 teams
+
+parallel_summary <- results_summary %>%
+  filter(Approach == "Parallel") %>%
+  arrange(desc(avg_RF)) %>%
+  slice(1:10) # Top 10 teams
+
+future_summary <- results_summary %>%
+  filter(Approach == "Future") %>%
+  arrange(desc(avg_RF)) %>%
+  slice(1:10) # Top 10 teams
+
+print("Top 10 Teams for No Parallel:")
+print(no_parallel_summary)
+
+print("Top 10 Teams for Parallel:")
+print(parallel_summary)
+
+print("Top 10 Teams for Future:")
+print(future_summary)
+```
+
+c.
+```{r}
+# Timing for bootstrap without parallel processing
+no_parallel_time <- system.time({
+  no_parallel <- stratified_bootstrap(Fielding, n_reps = 1000)
+})
+
+# Timing for bootstrap with parallel processing
+parallel_time <- system.time({
+  cl <- makeCluster(detectCores() / 2)
+  clusterEvalQ(cl, library(dplyr))
+  clusterExport(cl, varlist = c("Fielding", "stratified_bootstrap"))
+  parallel_bootstrap <- parLapply(cl, split(Fielding, Fielding$teamID), function(data_team) {
+    replicate(1000, {
+      sample_data <- data_team[sample(nrow(data_team), replace = TRUE), ]
+      mean(sample_data$RF, na.rm = TRUE)
+    })
+  })
+  stopCluster(cl)
+
+  parallel_bootstrap_df <- do.call(rbind, lapply(parallel_bootstrap, function(rf_values) {
+    tibble(
+      RF = rf_values
+    )
+  })) %>%
+    mutate(teamID = rep(names(parallel_bootstrap), each = 1000))
+})
+
+# Timing for future-based parallel processing
+future_time <- system.time({
+  plan(multisession, workers = detectCores() / 2)
+  future_bootstrap <- Fielding %>%
+    group_split(teamID) %>%
+    future_map_dfr(~ tibble(
+      teamID = unique(.x$teamID),
+      RF = replicate(1000, mean(slice_sample(.x, n = nrow(.x), replace = TRUE)$RF, na.rm = TRUE))
+    ))
+})
+
+print("Time taken for No Parallel:")
+print(no_parallel_time)
+
+print("Time taken for Parallel Processing:")
+print(parallel_time)
+
+print("Time taken for Future-based Parallel Processing:")
+print(future_time)
+```
+Each method provides similar results of average RF. We see that sequential processing is the slowest, with an elapsed time of 64.332 seconds. Traditional parallel processing reduces elapsed time to 10.323 seconds, demonstrating a substantial speedup. Future-based parallel processing is slightly slower at 13.596 seconds but still significantly faster than sequential processing. 
